@@ -1,0 +1,36 @@
+[package]
+name = "sloth-pet"
+version = "0.1.0"
+description = "Cross-platform 3D AI desktop pet"
+edition = "2021"
+
+[lib]
+name = "sloth_pet_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset", "macos-private-api", "tray-icon", "image-png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-store = "2.4.5"
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
+tauri-plugin-global-shortcut = "2.3.2"
+xcap = "0.9.8"
+image = "0.25.10"
+base64 = "0.23.1"
+chrono = { version = "0.4.45", features = ["clock"] }
+tokio = { version = "1.53.1", features = ["time"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
+futures-util = "0.3"
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"
+objc = "0.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
