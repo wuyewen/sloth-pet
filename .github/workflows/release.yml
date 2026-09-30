@@ -21,6 +21,11 @@ jobs:
           node-version: 20
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+      # 版本号以 tag 为准：构建前把 tag（去掉 v 前缀）写进 tauri.conf.json，
+      # 避免包名/应用版本与 tag 不一致（只改 CI 里的临时副本，不回写仓库）
+      - name: Sync version from tag
+        run: |
+          node -e "const fs=require('fs');const p='src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(p,'utf8'));c.version=process.env.GITHUB_REF_NAME.replace(/^v/,'');fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n')"
       - run: npm ci
       # 注意：tagName 必须显式传，否则 tauri-action 只构建不建 Release（静默跳过上传）
       - uses: tauri-apps/tauri-action@v0
