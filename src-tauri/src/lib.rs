@@ -307,6 +307,55 @@ async fn ws_tts_inner(
     Ok(ensure_playable(audio, 22050))
 }
 
+/// OpenAI 兼容 /chat/completions 的 SSE 流式代理。
+/// 打包后 WebView 源是 tauri:// 自定义协议，带 Authorization 头的跨域 fetch 会被
+/// WebKit 拦截（TypeError: Load failed），因此聊天请求走 Rust 侧 reqwest（无 CORS 限制），
+/// SSE 按行经 Channel 推回前端（按行切分保证每行是完整 UTF-8，\n 是 ASCII 不会劈开多字节字符）
+#[tauri::command]
+async fn llm_chat_stream(
+    endpoint: String,
+    api_key: String,
+    body: serde_json::Value,
+    on_chunk: tauri::ipc::Channel<String>,
+) -> Result<(), String> {
+    use futures_util::StreamExt;
+
+    let client = reqwest::Client::new();
+    let mut req = client.post(&endpoint).json(&body);
+    if !api_key.is_empty() {
+        req = req.bearer_auth(api_key);
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("请求失败：{e}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        let msg: String = text.chars().take(200).collect();
+        return Err(format!("API {status}：{msg}"));
+    }
+    let mut stream = resp.bytes_stream();
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("读取流失败：{e}"))?;
+        buf.extend_from_slice(&chunk);
+        while let Some(pos) = buf.iter().position(|b| *b == b'\n') {
+            let line: Vec<u8> = buf.drain(..=pos).collect();
+            if on_chunk
+                .send(String::from_utf8_lossy(&line).into_owned())
+                .is_err()
+            {
+                return Ok(()); // 前端已断开（中止对话）
+            }
+        }
+    }
+    if !buf.is_empty() {
+        let _ = on_chunk.send(String::from_utf8_lossy(&buf).into_owned());
+    }
+    Ok(())
+}
+
 /// 百炼/自建网关 WebSocket TTS（tts_v2 SpeechSynthesizer 协议，cosyvoice、qwen-audio-tts 等）。
 /// 浏览器 WebSocket 握手不能带自定义 Authorization 头，只能放 Rust 侧。
 /// endpoint 为完整 wss 地址（官方 wss://dashscope.aliyuncs.com/api-ws/v1/inference 或自建网关）。
@@ -565,6 +614,7 @@ pub fn run() {
             get_api_key,
             dashscope_tts,
             dashscope_ws_tts,
+            llm_chat_stream,
             custom_model_path,
             open_model_dir,
             list_models,
