@@ -1,6 +1,6 @@
 import { load, Store } from "@tauri-apps/plugin-store";
 import { invoke } from "@tauri-apps/api/core";
-import { DEFAULT_SETTINGS, Settings } from "../ai/providers";
+import { DEFAULT_SETTINGS, normalizePersonas, Settings } from "../ai/providers";
 
 // 懒加载：顶层 await 一旦失败会让整个模块图加载失败，导致主窗口白屏
 let storePromise: Promise<Store> | null = null;
@@ -50,7 +50,7 @@ export async function getSettings(): Promise<Settings> {
     readKey("voice-api-key"),
   ]);
   const settings = { ...DEFAULT_SETTINGS, ...saved, apiKey, voiceApiKey };
-  return settings;
+  return normalizePersonas(settings);
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {

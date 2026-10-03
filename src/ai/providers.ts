@@ -189,6 +189,7 @@ export interface PersonaMode {
   prompt: string;
 }
 
+/** 默认性格模式：仅作为首次使用的初始值，之后用户的增删改都存 settings.personas */
 export const PERSONA_MODES: PersonaMode[] = [
   { id: "lazy", name: "慵懒模式", prompt: DEFAULT_PERSONA },
   {
@@ -221,9 +222,12 @@ export interface Settings {
   customBaseUrl: string;
   chatModel: string;
   visionModel: string;
+  /** 当前生效的 System Prompt（= 选中模式的 prompt，保存时同步，供对话直接使用） */
   persona: string;
-  /** 性格模式：预设模式 id，用户改过文案后为 "custom" */
+  /** 当前选中的性格模式 id（必须有且仅有一个选中） */
   personaMode: string;
+  /** 性格模式列表（可增删、改名、编辑文案；至少保留一个） */
+  personas: PersonaMode[];
   screenshotHotkey: string;
   /** 语音输入开关（麦克风，音频直接发给对话模型理解，需模型支持音频输入） */
   voiceInputEnabled: boolean;
@@ -259,6 +263,7 @@ export const DEFAULT_SETTINGS: Settings = {
   visionModel: "",
   persona: DEFAULT_PERSONA,
   personaMode: "lazy",
+  personas: PERSONA_MODES.map((m) => ({ ...m })),
   screenshotHotkey: "CommandOrControl+Shift+P",
   voiceInputEnabled: false,
   voiceOutputEnabled: false,
@@ -276,6 +281,27 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export function getProvider(settings: Settings): ProviderPreset {
   return PROVIDERS.find((p) => p.id === settings.providerId) ?? PROVIDERS[0];
+}
+
+/** 性格模式归一化：旧版本数据迁移（预设跳转自定义的模式）+ 保证列表非空、选中项有效、
+ *  persona 始终等于选中模式的 prompt */
+export function normalizePersonas(s: Settings): Settings {
+  let personas =
+    Array.isArray(s.personas) && s.personas.length > 0
+      ? s.personas
+      : PERSONA_MODES.map((m) => ({ ...m }));
+  let personaMode = s.personaMode;
+  if (!personas.some((m) => m.id === personaMode)) {
+    // 旧版迁移：personaMode 为 custom（或已失效）时，把当前文案存成新模式保留下来
+    if (personaMode === "custom" && s.persona) {
+      personas = [...personas, { id: "custom-migrated", name: "自定义", prompt: s.persona }];
+      personaMode = "custom-migrated";
+    } else {
+      personaMode = personas[0].id;
+    }
+  }
+  const mode = personas.find((m) => m.id === personaMode)!;
+  return { ...s, personas, personaMode: mode.id, persona: mode.prompt };
 }
 
 /** 解析实际请求 baseUrl（自定义服务商时取用户填写值） */

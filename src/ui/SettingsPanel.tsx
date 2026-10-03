@@ -4,9 +4,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
+  DEFAULT_PERSONA,
   getProvider,
   getVoiceProvider,
-  PERSONA_MODES,
+  PersonaMode,
   PROVIDERS,
   Settings,
   VOICE_PROVIDERS,
@@ -255,6 +256,50 @@ export default function SettingsPanel() {
     }
   };
 
+  /** 当前选中的性格模式 */
+  const currentPersona =
+    settings.personas.find((m) => m.id === settings.personaMode) ??
+    settings.personas[0];
+
+  /** 切换选中模式（单选，必须有一个选中，点已选中的不取消） */
+  const selectPersona = (id: string) => {
+    const sel = settings.personas.find((m) => m.id === id);
+    if (!sel) return;
+    patch({ personaMode: id, persona: sel.prompt });
+  };
+
+  /** 编辑模式名称/文案；改的是选中模式的文案时同步 persona */
+  const updatePersona = (id: string, p: Partial<PersonaMode>) => {
+    const personas = settings.personas.map((m) =>
+      m.id === id ? { ...m, ...p } : m
+    );
+    const sel =
+      personas.find((m) => m.id === settings.personaMode) ?? personas[0];
+    patch({ personas, persona: sel.prompt });
+  };
+
+  /** 删除模式：至少保留一个 */
+  const deletePersona = (id: string) => {
+    if (settings.personas.length <= 1) return;
+    const personas = settings.personas.filter((m) => m.id !== id);
+    const sel =
+      personas.find((m) => m.id === settings.personaMode) ?? personas[0];
+    patch({ personas, personaMode: sel.id, persona: sel.prompt });
+  };
+
+  /** 新建模式：以默认文案为模板并直接选中进入编辑 */
+  const addPersona = () => {
+    const id = `mode-${Date.now()}`;
+    patch({
+      personas: [
+        ...settings.personas,
+        { id, name: "新模式", prompt: DEFAULT_PERSONA },
+      ],
+      personaMode: id,
+      persona: DEFAULT_PERSONA,
+    });
+  };
+
   return (
     <div
       style={{
@@ -379,45 +424,93 @@ export default function SettingsPanel() {
             </>
           )}
 
-          {section === "persona" && (
+          {section === "persona" && currentPersona && (
             <>
-              <div style={labelStyle}>模式</div>
+              <div style={labelStyle}>
+                模式（单选，至少保留一个；名称和文案都可直接编辑）
+              </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {[...PERSONA_MODES, { id: "custom", name: "自定义", prompt: "" }].map((m) => (
-                  <button
+                {settings.personas.map((m) => (
+                  <div
                     key={m.id}
-                    onClick={() =>
-                      patch(
-                        m.id === "custom"
-                          ? { personaMode: "custom" } // 保留当前文案，自由编辑
-                          : { personaMode: m.id, persona: m.prompt }
-                      )
-                    }
                     style={{
-                      background:
-                        settings.personaMode === m.id
-                          ? "rgba(74,108,247,0.35)"
-                          : "rgba(255,255,255,0.06)",
+                      display: "flex",
+                      alignItems: "center",
+                      borderRadius: 8,
                       border:
                         settings.personaMode === m.id
                           ? "1px solid #4a6cf7"
                           : "1px solid rgba(255,255,255,0.12)",
-                      borderRadius: 8,
-                      color: "#eee",
-                      fontSize: 12,
-                      padding: "6px 12px",
-                      cursor: "pointer",
+                      background:
+                        settings.personaMode === m.id
+                          ? "rgba(74,108,247,0.35)"
+                          : "rgba(255,255,255,0.06)",
+                      overflow: "hidden",
                     }}
                   >
-                    {m.name}
-                  </button>
+                    <button
+                      onClick={() => selectPersona(m.id)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#eee",
+                        fontSize: 12,
+                        padding: "6px 10px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {m.name}
+                    </button>
+                    {settings.personas.length > 1 && (
+                      <button
+                        onClick={() => deletePersona(m.id)}
+                        title="删除该模式"
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "#888",
+                          fontSize: 12,
+                          padding: "6px 8px 6px 0",
+                          cursor: "pointer",
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 ))}
+                <button
+                  onClick={addPersona}
+                  style={{
+                    background: "rgba(255,255,255,0.06)",
+                    border: "1px dashed rgba(255,255,255,0.25)",
+                    borderRadius: 8,
+                    color: "#999",
+                    fontSize: 12,
+                    padding: "6px 12px",
+                    cursor: "pointer",
+                  }}
+                >
+                  ＋ 新建
+                </button>
               </div>
-              <div style={labelStyle}>性格设定（System Prompt，改动后自动变为自定义）</div>
+
+              <div style={labelStyle}>模式名称</div>
+              <input
+                style={inputStyle}
+                value={currentPersona.name}
+                onChange={(e) =>
+                  updatePersona(currentPersona.id, { name: e.target.value })
+                }
+              />
+
+              <div style={labelStyle}>性格设定（System Prompt，编辑当前选中模式的文案）</div>
               <textarea
                 style={{ ...inputStyle, minHeight: 260, resize: "vertical", fontFamily: "inherit" }}
-                value={settings.persona}
-                onChange={(e) => patch({ persona: e.target.value, personaMode: "custom" })}
+                value={currentPersona.prompt}
+                onChange={(e) =>
+                  updatePersona(currentPersona.id, { prompt: e.target.value })
+                }
               />
             </>
           )}
