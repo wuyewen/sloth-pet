@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/dev-clean.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "tauri": "tauri"
@@ -11,7 +12,8 @@
   "dependencies": {
     "@pixiv/three-vrm": "^3.5.5",
     "@pixiv/three-vrm-animation": "^3.5.5",
-    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/api": "^2.12.1",
+    "@tauri-apps/plugin-dialog": "^2.8.1",
     "@tauri-apps/plugin-global-shortcut": "^2.3.2",
     "@tauri-apps/plugin-store": "^2.4.5",
     "react": "^18.3.1",

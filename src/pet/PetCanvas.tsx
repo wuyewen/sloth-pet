@@ -336,7 +336,11 @@ export default function PetCanvas({
       const clipMap = new Map<string, { clip: THREE.AnimationClip; dance: boolean }>();
       for (const [n, c] of buildClips(model)) clipMap.set(n, { clip: c, dance: false });
       try {
-        const motionPaths = await invoke<string[]>("list_motions");
+        // 资产目录可自定义（设置页），此处重新读一次设置拿当前目录
+        const s = await getSettings().catch(() => null);
+        const motionPaths = await invoke<string[]>("list_motions", {
+          dir: s?.modelDir || null,
+        });
         if (motionPaths.length > 0) {
           const vrmaLoader = new GLTFLoader();
           vrmaLoader.register((parser) => new VRMAnimationLoaderPlugin(parser));

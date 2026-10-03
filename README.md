@@ -53,8 +53,7 @@ macOS 首次打开如提示「无法验证开发者」：右键 → 打开即可
 
 模型格式为 **VRM**（`.vrm`），动作为 **VRMA**（`.vrma`），VRM 0.x 与 1.0 均支持（0.x 模型自动转正朝向）：
 
-1. 设置 → **模型与动作** → **打开模型目录**
-   （`~/Library/Application Support/com.slothpet.desktop/models/`，Windows 为 `%APPDATA%/com.slothpet.desktop/models/`）
+1. 设置 → **模型与动作**：默认目录为应用数据目录（macOS `~/Library/Application Support/com.slothpet.desktop/models/`，Windows `%APPDATA%/com.slothpet.desktop/models/`），也可点 **选择目录** 换成任意自定义目录（模型与动作一起搬走，恢复默认一键切回）
 2. `.vrm` 文件放进目录根部（**任意文件名**，可放多个）；`.vrma` 动作文件放进 `motions/` 子目录
 3. 点 **重新加载** / **同步动作**，然后：
    - 模型列表中单选切换当前模型

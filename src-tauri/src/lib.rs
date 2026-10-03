@@ -14,27 +14,32 @@ struct HitRect {
     h: f64,
 }
 
-/// 自定义 VRM 模型：存在则返回其路径，否则前端用内置默认模型
+/// 解析模型目录：dir 非空用自定义目录，否则用默认 app data 目录下的 models/
+fn resolve_models_dir(
+    app: &tauri::AppHandle,
+    dir: Option<String>,
+) -> Result<std::path::PathBuf, String> {
+    match dir {
+        Some(d) if !d.trim().is_empty() => Ok(std::path::PathBuf::from(d.trim())),
+        _ => Ok(app
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("models")),
+    }
+}
+
+/// 自定义 VRM 模型：存在则返回其路径，否则前端用内置默认模型（旧版 custom.vrm 约定兼容）
 #[tauri::command]
-fn custom_model_path(app: tauri::AppHandle) -> Option<String> {
-    let path = app
-        .path()
-        .app_data_dir()
-        .ok()?
-        .join("models")
-        .join("custom.vrm");
+fn custom_model_path(app: tauri::AppHandle, dir: Option<String>) -> Option<String> {
+    let path = resolve_models_dir(&app, dir).ok()?.join("custom.vrm");
     path.exists().then(|| path.to_string_lossy().into_owned())
 }
 
-/// 打开自定义模型目录（不存在则创建），用户把 custom.vrm 放进去即可
-/// 同时创建 motions/ 子目录：放 .vrma 动作文件
+/// 打开模型目录（不存在则创建），同时创建 motions/ 子目录：放 .vrma 动作文件
 #[tauri::command]
-fn open_model_dir(app: tauri::AppHandle) -> Result<(), String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("models");
+fn open_model_dir(app: tauri::AppHandle, dir: Option<String>) -> Result<(), String> {
+    let dir = resolve_models_dir(&app, dir)?;
     std::fs::create_dir_all(dir.join("motions")).map_err(|e| e.to_string())?;
     #[cfg(target_os = "macos")]
     let cmd = "open";
@@ -49,9 +54,9 @@ fn open_model_dir(app: tauri::AppHandle) -> Result<(), String> {
 
 /// 列出模型目录下的全部 .vrm 文件名（不含 motions/ 子目录，按文件名排序）
 #[tauri::command]
-fn list_models(app: tauri::AppHandle) -> Vec<String> {
-    let dir = match app.path().app_data_dir() {
-        Ok(d) => d.join("models"),
+fn list_models(app: tauri::AppHandle, dir: Option<String>) -> Vec<String> {
+    let dir = match resolve_models_dir(&app, dir) {
+        Ok(d) => d,
         Err(_) => return Vec::new(),
     };
     let mut out: Vec<String> = std::fs::read_dir(dir)
@@ -82,24 +87,29 @@ fn valid_asset_name(name: &str) -> bool {
 
 /// 按文件名取模型绝对路径（存在才返回），供前端 convertFileSrc 加载
 #[tauri::command]
-fn model_file_path(app: tauri::AppHandle, name: String) -> Option<String> {
+fn model_file_path(app: tauri::AppHandle, name: String, dir: Option<String>) -> Option<String> {
     if !valid_asset_name(&name) {
         return None;
     }
-    let path = app.path().app_data_dir().ok()?.join("models").join(&name);
+    let path = resolve_models_dir(&app, dir).ok()?.join(&name);
     path.exists().then(|| path.to_string_lossy().into_owned())
 }
 
-/// 删除资产文件：kind="model" 删 models/ 下模型，kind="motion" 删 models/motions/ 下动作
+/// 删除资产文件：kind="model" 删目录下模型，kind="motion" 删目录 motions/ 下动作
 #[tauri::command]
-fn delete_asset(app: tauri::AppHandle, name: String, kind: String) -> Result<(), String> {
+fn delete_asset(
+    app: tauri::AppHandle,
+    name: String,
+    kind: String,
+    dir: Option<String>,
+) -> Result<(), String> {
     if !valid_asset_name(&name) {
         return Err("非法文件名".into());
     }
-    let base = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let base = resolve_models_dir(&app, dir)?;
     let dir = match kind.as_str() {
-        "model" => base.join("models"),
-        "motion" => base.join("models").join("motions"),
+        "model" => base,
+        "motion" => base.join("motions"),
         _ => return Err("未知资产类型".into()),
     };
     std::fs::remove_file(dir.join(&name)).map_err(|e| e.to_string())
@@ -107,9 +117,9 @@ fn delete_asset(app: tauri::AppHandle, name: String, kind: String) -> Result<(),
 
 /// 列出模型目录 motions/ 下的 VRMA 动作文件（绝对路径，按文件名排序）
 #[tauri::command]
-fn list_motions(app: tauri::AppHandle) -> Vec<String> {
-    let dir = match app.path().app_data_dir() {
-        Ok(d) => d.join("models").join("motions"),
+fn list_motions(app: tauri::AppHandle, dir: Option<String>) -> Vec<String> {
+    let dir = match resolve_models_dir(&app, dir) {
+        Ok(d) => d.join("motions"),
         Err(_) => return Vec::new(),
     };
     let mut out: Vec<String> = std::fs::read_dir(dir)
@@ -544,22 +554,6 @@ fn spawn_click_through_polling(app: &tauri::App) {
     });
 }
 
-#[cfg(target_os = "macos")]
-fn make_window_transparent_macos(app: &tauri::App) {
-    use cocoa::appkit::{NSColor, NSWindow};
-    use cocoa::base::{id, nil, NO};
-
-    if let Some(window) = app.get_webview_window("main") {
-        if let Ok(ns_window) = window.ns_window() {
-            unsafe {
-                let ns_window = ns_window as id;
-                ns_window.setBackgroundColor_(NSColor::clearColor(nil));
-                ns_window.setOpaque_(NO);
-            }
-        }
-    }
-}
-
 /// 系统托盘（macOS 菜单栏 / Windows 右下角）：设置、退出等常驻入口
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -605,8 +599,15 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // 防多开：第二个实例启动时激活已有窗口并自行退出（需尽早注册）
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .manage(Arc::new(Mutex::new(HitRect::default())))
         .invoke_handler(tauri::generate_handler![
             set_hit_rect,
@@ -630,7 +631,8 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             {
-                make_window_transparent_macos(app);
+                // 注意：不要用 macos-private-api 强制透明（系统升级后私有 API 失效会导致窗口隐形），
+                // 透明由 tauri.conf 的 transparent:true 标准实现承担
                 // 桌宠不占 Dock 位，托盘是唯一常驻入口
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }

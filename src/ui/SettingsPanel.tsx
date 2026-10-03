@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   getProvider,
   getVoiceProvider,
@@ -170,7 +171,7 @@ export default function SettingsPanel() {
 
   useEffect(() => {
     if (section !== "actions") return;
-    invoke<string[]>("list_models")
+    invoke<string[]>("list_models", { dir: settings?.modelDir || null })
       .then(setModelFiles)
       .catch(() => {});
   }, [section]);
@@ -235,10 +236,24 @@ export default function SettingsPanel() {
   const patchMeta = (stem: string, m: { name?: string; dance?: boolean }) =>
     patch({ motionMeta: { ...settings.motionMeta, [stem]: m } });
 
-  const refreshModels = () =>
-    invoke<string[]>("list_models")
+  /** 资产目录：设置里配置了自定义目录则用之，否则默认 app data 目录 */
+  const assetDir = () => settings.modelDir || null;
+
+  const refreshModels = (dir?: string | null) =>
+    invoke<string[]>("list_models", {
+      dir: dir === undefined ? assetDir() : dir,
+    })
       .then(setModelFiles)
       .catch(() => {});
+
+  /** 选择自定义资产目录（系统目录选择器） */
+  const pickModelDir = async () => {
+    const dir = await open({ directory: true, title: "选择模型/动作目录" });
+    if (typeof dir === "string") {
+      patch({ modelDir: dir });
+      refreshModels(dir);
+    }
+  };
 
   return (
     <div
@@ -511,7 +526,39 @@ export default function SettingsPanel() {
 
           {section === "actions" && (
             <>
-              <div style={labelStyle}>模型库（.vrm 文件直接放入模型目录即可，无需重命名）</div>
+              <div style={labelStyle}>
+                资产目录（模型 .vrm 放目录根部，动作 .vrma 放 motions/ 子目录）
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  style={{ ...inputStyle, flex: 1, minWidth: 0, color: "#aaa" }}
+                  readOnly
+                  value={settings.modelDir || "默认目录（应用数据目录/models）"}
+                  title={settings.modelDir || "默认目录（应用数据目录/models）"}
+                />
+                <button
+                  style={{ ...miniBtnStyle, padding: "6px 12px", fontSize: 12 }}
+                  onClick={pickModelDir}
+                >
+                  选择目录
+                </button>
+                {settings.modelDir && (
+                  <button
+                    style={{ ...miniBtnStyle, padding: "6px 12px", fontSize: 12 }}
+                    onClick={() => {
+                      patch({ modelDir: "" });
+                      refreshModels(null);
+                    }}
+                  >
+                    恢复默认
+                  </button>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+                更换目录后点下方「保存」生效；目录里现有文件自动识别
+              </div>
+
+              <div style={labelStyle}>模型库（.vrm 文件直接放入资产目录即可，无需重命名）</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <label style={{ ...toggleLabelStyle, marginTop: 0 }}>
                   <input
@@ -547,7 +594,7 @@ export default function SettingsPanel() {
                       style={miniBtnStyle}
                       onClick={async () => {
                         if (!confirm(`删除模型文件 ${f}？`)) return;
-                        await invoke("delete_asset", { name: f, kind: "model" }).catch(alert);
+                        await invoke("delete_asset", { name: f, kind: "model", dir: assetDir() }).catch(alert);
                         if (settings.modelFile === f) patch({ modelFile: "" });
                         refreshModels();
                         emit("model-changed");
@@ -561,7 +608,7 @@ export default function SettingsPanel() {
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                 <button
                   style={{ ...inputStyle, cursor: "pointer", flex: 1 }}
-                  onClick={() => invoke("open_model_dir")}
+                  onClick={() => invoke("open_model_dir", { dir: assetDir() })}
                 >
                   打开模型目录
                 </button>
@@ -732,6 +779,7 @@ export default function SettingsPanel() {
                           await invoke("delete_asset", {
                             name: `${stem}.vrma`,
                             kind: "motion",
+                            dir: assetDir(),
                           }).catch(alert);
                           emit("model-changed");
                         }}

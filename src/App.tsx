@@ -63,6 +63,7 @@ export default function App() {
   const [emotion, setEmotion] = useState<{ tag: string; key: number } | null>(null);
   const [micEnabled, setMicEnabled] = useState(false);
   const [enabledActions, setEnabledActions] = useState<string[]>([]);
+  const [modelDir, setModelDir] = useState("");
   const [emotionActions, setEmotionActions] = useState<Record<string, string>>({});
   const [motionMeta, setMotionMeta] = useState<
     Record<string, { name?: string; dance?: boolean }>
@@ -71,17 +72,19 @@ export default function App() {
   const messagesRef = useRef<ChatMessage[]>([]);
 
   /** 解析当前应加载的模型 URL：settings.modelFile 指定模型目录里的 .vrm 文件名；
-   *  未设置时回退旧版 custom.vrm 约定，再回退内置模型 */
+   *  未设置时回退旧版 custom.vrm 约定，再回退内置模型。modelDir 非空时用自定义资产目录 */
   const loadModel = useCallback(async (s: Settings) => {
     try {
+      const dir = s.modelDir || null;
       if (s.modelFile) {
         const p = await invoke<string | null>("model_file_path", {
           name: s.modelFile,
+          dir,
         });
         setModelUrl(p ? convertFileSrc(p) : "/models/pet.vrm");
         return;
       }
-      const legacy = await invoke<string | null>("custom_model_path");
+      const legacy = await invoke<string | null>("custom_model_path", { dir });
       setModelUrl(legacy ? convertFileSrc(legacy) : "/models/pet.vrm");
     } catch {
       // 解析失败保持当前模型
@@ -110,6 +113,7 @@ export default function App() {
       settingsRef.current = s;
       setMicEnabled(s.voiceInputEnabled);
       setEnabledActions(s.enabledActions);
+      setModelDir(s.modelDir ?? "");
       setEmotionActions(s.emotionActions ?? {});
       setMotionMeta(s.motionMeta ?? {});
       loadModel(s); // modelFile 未变时 setModelUrl 同值，不触发模型重载
@@ -418,7 +422,7 @@ export default function App() {
         }}
       >
         <PetCanvas
-          key={`${modelUrl}:${modelKey}`}
+          key={`${modelUrl}:${modelDir}:${modelKey}`}
           modelUrl={modelUrl}
           emotion={emotion}
           busy={sending}

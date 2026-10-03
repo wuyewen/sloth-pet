@@ -241,8 +241,10 @@ export interface Settings {
   voiceTtsVoice: string;
   /** 启用的动作 id（ACTION_DEFS），自定义模型骨骼不全时可关掉不合适的 */
   enabledActions: string[];
-  /** 当前选用的自定义模型文件名（models 目录下）；空串 = 内置模型 */
+  /** 当前选用的自定义模型文件名（模型目录下）；空串 = 内置模型 */
   modelFile: string;
+  /** 自定义资产目录（模型 .vrm + motions/ 子目录放动作）；空串 = 默认 app data 目录 */
+  modelDir: string;
   /** 情绪标签 → 配套动作 id（内置动作名或 clip:xxx），覆盖默认 EMOTION_ACTION */
   emotionActions: Record<string, string>;
   /** 外部动作元数据：按文件名 stem 存显示名与「舞蹈」标记（舞蹈不进随机池、完整播放） */
@@ -267,6 +269,7 @@ export const DEFAULT_SETTINGS: Settings = {
   voiceTtsVoice: "Cherry",
   enabledActions: ACTION_DEFS.map((a) => a.id),
   modelFile: "",
+  modelDir: "",
   emotionActions: { ...EMOTION_ACTION },
   motionMeta: {},
 };
