@@ -247,12 +247,26 @@ export default function SettingsPanel() {
       .then(setModelFiles)
       .catch(() => {});
 
-  /** 选择自定义资产目录（系统目录选择器） */
+  /** 目录变更立即持久化并触发重扫（只写 modelDir 字段，
+   *  重新读磁盘上的设置避免把表单里其他未保存的改动带进去） */
+  const persistModelDir = async (dir: string) => {
+    try {
+      const saved = await getSettings();
+      await saveSettings({ ...saved, modelDir: dir });
+      await emit("settings-changed");
+      await emit("model-changed");
+    } catch (e) {
+      setSaveError(String(e));
+    }
+  };
+
+  /** 选择自定义资产目录（系统目录选择器），选完立即生效 */
   const pickModelDir = async () => {
     const dir = await open({ directory: true, title: "选择模型/动作目录" });
     if (typeof dir === "string") {
       patch({ modelDir: dir });
       refreshModels(dir);
+      await persistModelDir(dir);
     }
   };
 
@@ -638,9 +652,10 @@ export default function SettingsPanel() {
                 {settings.modelDir && (
                   <button
                     style={{ ...miniBtnStyle, padding: "6px 12px", fontSize: 12 }}
-                    onClick={() => {
+                    onClick={async () => {
                       patch({ modelDir: "" });
                       refreshModels(null);
+                      await persistModelDir("");
                     }}
                   >
                     恢复默认
@@ -648,7 +663,7 @@ export default function SettingsPanel() {
                 )}
               </div>
               <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
-                更换目录后点下方「保存」生效；目录里现有文件自动识别
+                选择/恢复目录立即生效，模型与动作自动重扫
               </div>
 
               <div style={labelStyle}>模型库（.vrm 文件直接放入资产目录即可，无需重命名）</div>

@@ -139,6 +139,12 @@ fn list_motions(app: tauri::AppHandle, dir: Option<String>) -> Vec<String> {
 }
 
 
+/// 前端全局错误上报：透明窗口下前端崩溃 = 窗口隐形，必须把错误打到终端才能排查
+#[tauri::command]
+fn log_frontend_error(message: String) {
+    eprintln!("[frontend] {message}");
+}
+
 /// 前端上报角色本体的命中区域（物理像素，相对窗口左上角）
 #[tauri::command]
 fn set_hit_rect(state: tauri::State<'_, Arc<Mutex<HitRect>>>, x: f64, y: f64, w: f64, h: f64) {
@@ -611,6 +617,7 @@ pub fn run() {
         .manage(Arc::new(Mutex::new(HitRect::default())))
         .invoke_handler(tauri::generate_handler![
             set_hit_rect,
+            log_frontend_error,
             save_api_key,
             get_api_key,
             dashscope_tts,

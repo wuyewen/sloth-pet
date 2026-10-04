@@ -337,10 +337,16 @@ export default function PetCanvas({
       for (const [n, c] of buildClips(model)) clipMap.set(n, { clip: c, dance: false });
       try {
         // 资产目录可自定义（设置页），此处重新读一次设置拿当前目录
-        const s = await getSettings().catch(() => null);
+        const s = await getSettings().catch((e) => {
+          console.warn("读取设置失败，动作扫描回退默认目录:", e);
+          return null;
+        });
         const motionPaths = await invoke<string[]>("list_motions", {
           dir: s?.modelDir || null,
         });
+        if (s?.modelDir) {
+          console.log(`扫描自定义资产目录 ${s.modelDir}，找到 ${motionPaths.length} 个动作`);
+        }
         if (motionPaths.length > 0) {
           const vrmaLoader = new GLTFLoader();
           vrmaLoader.register((parser) => new VRMAnimationLoaderPlugin(parser));
