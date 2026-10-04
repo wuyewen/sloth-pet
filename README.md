@@ -74,13 +74,14 @@ macOS 首次打开如提示「无法验证开发者」：右键 → 打开即可
 | **[BOOTH](https://booth.pm)** | 高质量免费/付费资源 | 搜「VRM」「VRMA」「VRM モーション」，动作包主要在这里 |
 | **[VRoid Studio](https://vroid.com/studio)** | 找不到现成的就自己捏 | 免费捏人软件，无需建模基础，直接导出 `.vrm` |
 
-动作文件（`.vrma`）主要来自 BOOTH 的 VRMA 动作包和 VRoid Hub 的动作分区；同一个动作文件任何 VRM 模型都能播。
+动作文件（`.vrma`）主要来自 BOOTH 的 VRMA 动作包和 VRoid Hub 的动作分区；同一个动作文件任何 VRM 模型都能播。**建议优先收 VRMA**——MMD 的 `.vmd` 动作虽然网上存量更大，但需要转换且按 MMD 模型比例制作，穿模概率高，除非遇到非它不可的动作。
 
 **格式对照**：
 
 | 格式 | 能否直接用 | 说明 |
 |------|-----------|------|
-| `.vrm` / `.vrma` | ✅ 直接导入 | 首选 |
+| `.vrm` / `.vrma` | ✅ 直接导入 | 首选，动作文件推荐只收这个格式 |
+| `.vmd` | ⚠️ 需转换 | MMD 动作格式（网上存量最大的舞蹈资源），需用 Blender + mmd_tools 转为 VRMA |
 | `.pmx` / `.pmd` / `.fbx` | ⚠️ 需转换 | 用 Blender + VRM Addon 转换为 VRM |
 | `.vroid` | ⚠️ 需导出 | VRoid Studio 工程文件，在 VRoid Studio 里导出 `.vrm` |
 
