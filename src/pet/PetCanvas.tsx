@@ -92,6 +92,7 @@ export default function PetCanvas({
   enabledActions,
   emotionActions,
   motionMeta,
+  danceFollowSpeed,
 }: {
   modelUrl: string;
   emotion?: PetEmotion | null;
@@ -105,6 +106,8 @@ export default function PetCanvas({
   emotionActions?: Record<string, string>;
   /** 外部动作元数据（显示名、舞蹈标记），按文件名 stem 索引 */
   motionMeta?: Record<string, { name?: string; dance?: boolean }>;
+  /** 舞蹈镜头跟随速度（1~20，默认 6） */
+  danceFollowSpeed?: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const vrmRef = useRef<VRM | null>(null);
@@ -135,6 +138,11 @@ export default function PetCanvas({
   useEffect(() => {
     emotionActionsRef.current = emotionActions ?? {};
   }, [emotionActions]);
+
+  const followSpeedRef = useRef(6);
+  useEffect(() => {
+    followSpeedRef.current = danceFollowSpeed ?? 6;
+  }, [danceFollowSpeed]);
 
   // 舞蹈标记实时生效：设置页切换 dance 后无需重载模型
   useEffect(() => {
@@ -207,6 +215,16 @@ export default function PetCanvas({
     let headY = 1.3;
     const camBase = new THREE.Vector3(0, 1.3, 1.6);
     const camCenter = new THREE.Vector3(0, 1.3, 0);
+    /** 基准取景中心（frameUpperBody 的结果），非舞蹈时 camCenter 平滑回到这里 */
+    const baseCenter = new THREE.Vector3(0, 1.3, 0);
+    /** 髋部骨骼（舞蹈时取景中心跟随它） */
+    let hipsBone: THREE.Object3D | null = null;
+    const followPos = new THREE.Vector3();
+    /** 视差偏移（光标移动时更新，渲染循环叠加到相机上） */
+    let parallaxX = 0;
+    let parallaxY = 0;
+    /** 取景缩放：1 = 常规近距离，>1 = 舞蹈拉远（平滑过渡） */
+    let framingScale = 1;
 
     const loader = new GLTFLoader();
     loader.register((parser) => new VRMLoaderPlugin(parser));
@@ -376,6 +394,9 @@ export default function PetCanvas({
       const framed = frameUpperBody(camera, model);
       camBase.copy(framed.position);
       camCenter.copy(framed.center);
+      baseCenter.copy(framed.center);
+      hipsBone =
+        model.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Hips) ?? null;
       animator = new IdleAnimator(model);
       actionPlayer = new ActionPlayer(model, { spineSign, neckSign });
       actionPlayerRef.current = actionPlayer;
@@ -547,13 +568,9 @@ export default function PetCanvas({
         .copy(camera.position)
         .add(dir.multiplyScalar(Math.max(dist, 0.1)));
 
-      // 视差：相机随光标轻微移动，制造"透过窗口看立体角色"的纵深错觉
-      camera.position.set(
-        camBase.x + nx * 0.05,
-        camBase.y + ny * 0.03,
-        camBase.z
-      );
-      camera.lookAt(camCenter);
+      // 视差偏移记录：相机位置由渲染循环每帧统一计算（叠加舞蹈取景缩放）
+      parallaxX = nx * 0.05;
+      parallaxY = ny * 0.03;
     };
 
     let cancelled = false;
@@ -703,6 +720,26 @@ export default function PetCanvas({
           if (allClosed) talkingActive = false;
         }
       }
+
+      // 舞蹈取景：播放舞蹈类片段时相机平滑拉远（1.6 倍距离）给大幅度动作留空间，
+      // 且取景中心跟随髋部——角色跳到哪儿镜头跟到哪儿；
+      // 结束或切回短动作时，距离与中心都平滑回到基准取景
+      const dancing = !!(
+        clipPlayer?.currentName && clipPlayer.isDance(clipPlayer.currentName)
+      );
+      framingScale += ((dancing ? 1.6 : 1) - framingScale) * Math.min(1, dt * 3);
+      if (dancing && hipsBone) {
+        hipsBone.getWorldPosition(followPos);
+        camCenter.lerp(followPos, Math.min(1, dt * followSpeedRef.current));
+      } else {
+        camCenter.lerp(baseCenter, Math.min(1, dt * 3));
+      }
+      camera.position.set(
+        camCenter.x + (camBase.x - baseCenter.x) * framingScale + parallaxX,
+        camCenter.y + (camBase.y - baseCenter.y) * framingScale + parallaxY,
+        camCenter.z + (camBase.z - baseCenter.z) * framingScale
+      );
+      camera.lookAt(camCenter);
 
       vrm?.update(dt);
       renderer.render(scene, camera);

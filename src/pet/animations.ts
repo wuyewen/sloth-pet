@@ -445,6 +445,7 @@ export class ClipPlayer {
   private actions = new Map<string, THREE.AnimationAction>();
   private danceSet = new Set<string>();
   private current: THREE.AnimationAction | null = null;
+  private currentName_: string | null = null;
 
   constructor(vrm: VRM, clips: Map<string, { clip: THREE.AnimationClip; dance: boolean }>) {
     this.mixer = new THREE.AnimationMixer(vrm.scene);
@@ -459,12 +460,18 @@ export class ClipPlayer {
       if (e.action === this.current) {
         e.action.fadeOut(0.35);
         this.current = null;
+        this.currentName_ = null;
       }
     });
   }
 
   get playing(): boolean {
     return this.current !== null;
+  }
+
+  /** 当前播放的片段名（供舞蹈取景等场景判断） */
+  get currentName(): string | null {
+    return this.currentName_;
   }
 
   get names(): string[] {
@@ -492,12 +499,14 @@ export class ClipPlayer {
     next.reset().fadeIn(0.25).play();
     this.current?.fadeOut(0.25);
     this.current = next;
+    this.currentName_ = name;
   }
 
   /** 打断当前片段（淡出），供预览切换/模型卸载前清理 */
   stop() {
     this.current?.fadeOut(0.25);
     this.current = null;
+    this.currentName_ = null;
   }
 
   update(dt: number) {

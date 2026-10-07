@@ -942,6 +942,26 @@ export default function SettingsPanel() {
                   </div>
                 );
               })}
+              <div style={labelStyle}>
+                舞蹈镜头跟随速度（1~20，越大镜头跟得越紧，默认 6）
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
+                <input
+                  type="range"
+                  min={1}
+                  max={20}
+                  step={1}
+                  value={settings.danceFollowSpeed}
+                  onChange={(e) =>
+                    patch({ danceFollowSpeed: Number(e.target.value) })
+                  }
+                  style={{ flex: 1 }}
+                />
+                <span style={{ width: 24, fontSize: 12, color: "#ccc", textAlign: "right" }}>
+                  {settings.danceFollowSpeed}
+                </span>
+              </div>
+
               <div style={{ fontSize: 12, color: "#888", marginTop: 8, lineHeight: 1.6 }}>
                 换自定义模型后点上方「同步动作」重新探测；不支持的动作为骨骼或表情缺失。
                 时长 &gt;8s 的动作自动标记为舞蹈：完整播放且不进入随机池。

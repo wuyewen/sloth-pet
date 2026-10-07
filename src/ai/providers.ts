@@ -253,6 +253,8 @@ export interface Settings {
   emotionActions: Record<string, string>;
   /** 外部动作元数据：按文件名 stem 存显示名与「舞蹈」标记（舞蹈不进随机池、完整播放） */
   motionMeta: Record<string, { name?: string; dance?: boolean }>;
+  /** 舞蹈镜头跟随速度（1~20，越大跟得越紧；0.3s 延迟 ≈ 6） */
+  danceFollowSpeed: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -277,6 +279,7 @@ export const DEFAULT_SETTINGS: Settings = {
   modelDir: "",
   emotionActions: { ...EMOTION_ACTION },
   motionMeta: {},
+  danceFollowSpeed: 6,
 };
 
 export function getProvider(settings: Settings): ProviderPreset {

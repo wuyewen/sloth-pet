@@ -65,6 +65,7 @@ export default function App() {
   const [enabledActions, setEnabledActions] = useState<string[]>([]);
   const [modelDir, setModelDir] = useState("");
   const [emotionActions, setEmotionActions] = useState<Record<string, string>>({});
+  const [followSpeed, setFollowSpeed] = useState(6);
   const [motionMeta, setMotionMeta] = useState<
     Record<string, { name?: string; dance?: boolean }>
   >({});
@@ -115,6 +116,7 @@ export default function App() {
       setEnabledActions(s.enabledActions);
       setModelDir(s.modelDir ?? "");
       setEmotionActions(s.emotionActions ?? {});
+      setFollowSpeed(s.danceFollowSpeed ?? 6);
       setMotionMeta(s.motionMeta ?? {});
       loadModel(s); // modelFile 未变时 setModelUrl 同值，不触发模型重载
     };
@@ -430,6 +432,7 @@ export default function App() {
           enabledActions={enabledActions}
           emotionActions={emotionActions}
           motionMeta={motionMeta}
+          danceFollowSpeed={followSpeed}
         />
       </div>
       {chatOpen && (
