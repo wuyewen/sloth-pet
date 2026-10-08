@@ -228,7 +228,13 @@ export default function PetCanvas({
 
     const loader = new GLTFLoader();
     loader.register((parser) => new VRMLoaderPlugin(parser));
-    loader.load(modelUrl, async (gltf) => {
+    // 加载失败必须留痕（之前静默失败 = 透明窗口隐形，排查无门）；
+    // 走 Rust 上报通道打到终端（透明窗口下 webview console 不可见）
+    const reportErr = (msg: string) =>
+      invoke("log_frontend_error", { message: msg }).catch(() => {});
+    loader.load(
+      modelUrl,
+      async (gltf) => {
       const model = gltf.userData.vrm as VRM; // async 回调里用局部常量，避免 await 后丢失类型收窄
       vrm = model;
       vrmRef.current = model;
@@ -437,7 +443,10 @@ export default function PetCanvas({
         }
       }
       emit("actions-synced");
-    });
+      }, undefined, (e) => {
+        // 加载失败（格式错误/asset 协议拦截/文件不可读等）
+        reportErr(`模型加载失败 ${modelUrl}: ${String(e)}`);
+      });
 
     // 单击戳一戳：延迟 260ms 确认不是双击 → 惊讶表情 + 点头（有冷却，对话中不响应）
     let pokeTimer: ReturnType<typeof setTimeout> | null = null;
