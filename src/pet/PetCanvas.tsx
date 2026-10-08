@@ -4,7 +4,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { emit, listen } from "@tauri-apps/api/event";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { EMOTION_TO_EXPRESSION } from "../ai/emotion";
-import { getSpeechLevel } from "../ai/voice";
+import { getCurrentViseme, getSpeechLevel, getSpeechVowel } from "../ai/voice";
 import { getSettings, saveAvailableActions, saveMotionInfo, saveSettings } from "../store/settings";
 import {
   VRM,
@@ -84,6 +84,8 @@ export interface PetEmotion {
   key: number;
 }
 
+const EMOTION_EXPR_NAMES = new Set(Object.values(EMOTION_TO_EXPRESSION));
+
 export default function PetCanvas({
   modelUrl,
   emotion,
@@ -122,6 +124,8 @@ export default function PetCanvas({
   const autoDanceRef = useRef<Map<string, boolean>>(new Map());
   // 表情目标值：渲染循环每帧向其插值，避免表情瞬间跳变
   const exprTargetsRef = useRef<Map<string, number>>(new Map());
+  /** 情绪表情持有状态：语音播报期间持续续期，不说话时按默认时长淡出 */
+  const emotionHoldRef = useRef<{ name: string; holdUntil: number } | null>(null);
 
   useEffect(() => {
     busyRef.current = !!busy;
@@ -155,7 +159,8 @@ export default function PetCanvas({
     }
   }, [motionMeta]);
 
-  // AI 回复的情绪标签 → VRM 表情 + 配套动作，5 秒后表情淡出回默认
+  // AI 回复的情绪标签 → VRM 表情 + 配套动作。表情淡出由渲染循环托管：
+  // 默认 5s，语音播报期间持续续期（说完后再保持 2s），避免"笑一下然后面无表情地念稿"
   useEffect(() => {
     if (!emotion) return;
     const exprName = EMOTION_TO_EXPRESSION[emotion.tag];
@@ -164,15 +169,15 @@ export default function PetCanvas({
       targets.set(name, 0);
     }
     if (exprName) targets.set(exprName, 1);
+    emotionHoldRef.current = exprName
+      ? { name: exprName, holdUntil: performance.now() / 1000 + 5 }
+      : null;
     const mapped =
       emotionActionsRef.current[emotion.tag] ?? EMOTION_ACTION[emotion.tag];
     if (mapped && enabledRef.current.has(mapped)) {
       if (mapped.startsWith("clip:")) clipPlayerRef.current?.play(mapped.slice(5));
       else actionPlayerRef.current?.play(mapped as ActionName);
     }
-    if (!exprName) return;
-    const timer = setTimeout(() => targets.set(exprName, 0), 5000);
-    return () => clearTimeout(timer);
   }, [emotion]);
 
   useEffect(() => {
@@ -283,9 +288,9 @@ export default function PetCanvas({
       saccadeTarget.set(0, headY, 1);
       if (model.lookAt) model.lookAt.target = lookTarget;
 
-      // 口型同步可用元音：按模型实际注册的表情过滤（VRM 1.0 预设 aa/ih/ou）
+      // 口型同步可用元音：按模型实际注册的表情过滤（VRM 1.0 预设 aa/ih/ou/ee/oh）
       vowels.push(
-        ...["aa", "ih", "ou"].filter((v) =>
+        ...["aa", "ih", "ou", "ee", "oh"].filter((v) =>
           model.expressionManager?.getExpression(v)
         )
       );
@@ -514,6 +519,12 @@ export default function PetCanvas({
     let nextMicroAt = 12; // 启动 12s 后才开始微表情，避免刚打开就"戏太多"
     /** 模型实际支持的口型表情（模型加载后填充） */
     const vowels: string[] = [];
+    /** viseme 映射到模型实际支持的口型：ee→ih、oh→ou，都没有则回退第一个可用 */
+    const mapVowel = (v: string): string => {
+      if (vowels.includes(v)) return v;
+      const fallback = v === "ee" ? "ih" : v === "oh" ? "ou" : "aa";
+      return vowels.includes(fallback) ? fallback : vowels[0];
+    };
 
     /** 短时表情：写入目标值，holdSec 后归零（渲染循环负责插值淡出） */
     const flashExpression = (name: string, weight: number, holdSec: number) => {
@@ -679,14 +690,29 @@ export default function PetCanvas({
           Math.random() * (LIVENESS.microExprMax - LIVENESS.microExprMin);
       }
 
-      // 表情向目标值插值：淡入快、淡出慢
+      // 情绪表情持有：说话期间持续续期，不说话超过 holdUntil 则交回淡出
+      const hold = emotionHoldRef.current;
+      if (hold) {
+        if (speechLevel > 0.02) hold.holdUntil = now + 2;
+        if (now > hold.holdUntil) {
+          targets.set(hold.name, 0);
+          emotionHoldRef.current = null;
+        }
+      }
+
+      // 表情向目标值插值：淡入快、淡出慢；
+      // 说话期间情绪表情降权，避免和元音口型在嘴部拉扯出怪脸
       const mgr = vrm?.expressionManager;
       if (mgr) {
         for (const [name, target] of targets) {
+          const effective =
+            speechLevel > 0.02 && EMOTION_EXPR_NAMES.has(name)
+              ? target * 0.6
+              : target;
           const cur = mgr.getValue(name) ?? 0;
-          const speed = target > cur ? 10 : 3;
-          const next = cur + (target - cur) * Math.min(1, dt * speed);
-          if (target === 0 && next < 0.01) {
+          const speed = effective > cur ? 10 : 3;
+          const next = cur + (effective - cur) * Math.min(1, dt * speed);
+          if (effective === 0 && next < 0.01) {
             mgr.setValue(name, 0);
             targets.delete(name);
           } else {
@@ -695,24 +721,33 @@ export default function PetCanvas({
         }
       }
 
-      // 口型同步：在表情插值之后写入，说话优先于哈欠等占用嘴部的表现；
-      // 按音量驱动、元音随机切换（aa 50%，其余均分），比单一 aa 开合自然
+      // 口型同步：在表情插值之后写入，说话优先于哈欠等占用嘴部的表现。
+      // 优先按文本 viseme 时间轴（speak 时生成）；时间轴缺失时退到 DSP 共振峰分类；
+      // 都不可用时闭嘴。sil 事件（标点/字间空隙）→ 全部元音归零
       if (mgr && vowels.length > 0) {
         if (speechLevel > 0.02) {
           talkingActive = true;
-          if (now > lip.nextSwitchAt) {
-            lip.nextSwitchAt =
-              now +
-              LIVENESS.lipSwitchMin +
-              Math.random() * (LIVENESS.lipSwitchMax - LIVENESS.lipSwitchMin);
-            lip.vowel =
-              Math.random() < 0.5 && vowels.includes("aa")
-                ? "aa"
-                : vowels[Math.floor(Math.random() * vowels.length)];
-            lip.peak = 0.4 + Math.random() * 0.6;
+          const vis = getCurrentViseme();
+          let vowel: string | null;
+          let peak: number;
+          if (vis) {
+            vowel = vis.vowel === "sil" ? null : mapVowel(vis.vowel);
+            peak = vis.weight;
+          } else {
+            // DSP 兜底：最短保持时间内不切换，避免嘴型高频抖动
+            if (now > lip.nextSwitchAt) {
+              lip.nextSwitchAt =
+                now +
+                LIVENESS.lipSwitchMin +
+                Math.random() * (LIVENESS.lipSwitchMax - LIVENESS.lipSwitchMin);
+              lip.vowel = mapVowel(getSpeechVowel() ?? "aa");
+              lip.peak = 0.4 + Math.random() * 0.6;
+            }
+            vowel = lip.vowel;
+            peak = lip.peak;
           }
           for (const v of vowels) {
-            const target = v === lip.vowel ? speechLevel * lip.peak : 0;
+            const target = v === vowel ? speechLevel * peak : 0;
             const cur = mgr.getValue(v) ?? 0;
             const speed = target > cur ? 25 : 10;
             mgr.setValue(v, cur + (target - cur) * Math.min(1, dt * speed));

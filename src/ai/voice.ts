@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getVoiceProvider, resolveVoiceBaseUrl, Settings } from "./providers";
+import { buildVisemeTrack, visemeAt, VisemeEvent, VisemeTrack } from "./lipsync";
 
 /** 录音 Blob → data URI，作为 input_audio 直接发给支持音频的对话模型 */
 export function blobToDataUri(blob: Blob): Promise<string> {
@@ -75,7 +76,11 @@ let audioCtx: AudioContext | null = null;
 let playingSource: AudioBufferSourceNode | null = null;
 let analyser: AnalyserNode | null = null;
 let analyserBuf: Uint8Array<ArrayBuffer> | null = null;
+let analyserFreqBuf: Uint8Array<ArrayBuffer> | null = null;
 let smoothedLevel = 0;
+let visemeTrack: VisemeTrack | null = null;
+/** 当前播报在音频时钟上的起点（audioCtx.currentTime） */
+let playStartAt = 0;
 
 /** 当前播报音量（0..1，快攻慢放平滑），未在播报时返回 0；供口型同步每帧轮询 */
 export function getSpeechLevel(): number {
@@ -95,6 +100,36 @@ export function getSpeechLevel(): number {
   return smoothedLevel;
 }
 
+/** 简易共振峰元音分类：按 F1/F2 频段能量占比猜当前发音的口型。
+ *  ou/oh 低频集中，aa 中频为主，ih/ee 高 F2 显著。返回 null 表示未在播报 */
+export function getSpeechVowel(): "aa" | "ih" | "ou" | null {
+  if (!playingSource || !analyser || !analyserFreqBuf || !audioCtx) return null;
+  analyser.getByteFrequencyData(analyserFreqBuf);
+  const binHz = audioCtx.sampleRate / analyser.fftSize;
+  const band = (lo: number, hi: number): number => {
+    const i0 = Math.max(1, Math.floor(lo / binHz));
+    const i1 = Math.min(analyserFreqBuf!.length - 1, Math.ceil(hi / binHz));
+    let e = 0;
+    for (let i = i0; i <= i1; i++) e += analyserFreqBuf![i];
+    return e / (i1 - i0 + 1) / 255;
+  };
+  const low = band(200, 600); // F1 低区：ou/oh
+  const mid = band(600, 1200); // F1 高区：aa
+  const high = band(1800, 3200); // F2 高区：ih/ee
+  const total = low + mid + high;
+  if (total < 0.03) return null;
+  if (high / total > 0.32) return "ih";
+  if (low / total > 0.52) return "ou";
+  return "aa";
+}
+
+/** 当前时刻应显示的口型（按音频时钟查文本 viseme 时间轴）；
+ *  无时间轴（非 speak 播放/已结束）返回 null，调用方退 DSP 分类 */
+export function getCurrentViseme(): VisemeEvent | null {
+  if (!playingSource || !visemeTrack || !audioCtx) return null;
+  return visemeAt(visemeTrack, audioCtx.currentTime - playStartAt);
+}
+
 /** 打断当前播报 */
 export function stopSpeaking() {
   try {
@@ -103,6 +138,7 @@ export function stopSpeaking() {
     // 已结束的 source 重复 stop 会抛错，忽略
   }
   playingSource = null;
+  visemeTrack = null;
 }
 
 /** 语音合成并播放（按播报服务商的接口格式分发）；新播报会打断旧的。
@@ -123,14 +159,21 @@ export async function speak(s: Settings, text: string): Promise<void> {
   const decoded = await audioCtx.decodeAudioData(raw);
   const source = audioCtx.createBufferSource();
   source.buffer = decoded;
+  // 文本 viseme 时间轴：原文 + 音频真实时长，播放期间供口型精确查询
+  visemeTrack = buildVisemeTrack(text, decoded.duration);
+  playStartAt = audioCtx.currentTime;
   analyser ??= audioCtx.createAnalyser();
   analyser.fftSize = 512;
   analyserBuf ??= new Uint8Array(analyser.fftSize);
+  analyserFreqBuf ??= new Uint8Array(analyser.frequencyBinCount);
   source.connect(analyser);
   analyser.connect(audioCtx.destination);
   playingSource = source;
   source.onended = () => {
-    if (playingSource === source) playingSource = null;
+    if (playingSource === source) {
+      playingSource = null;
+      visemeTrack = null;
+    }
   };
   source.start();
 }
