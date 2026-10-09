@@ -233,6 +233,8 @@ export interface Settings {
   voiceInputEnabled: boolean;
   /** 语音播报开关（扬声器，AI 回复朗读） */
   voiceOutputEnabled: boolean;
+  /** 语音播报范围：all=所有回复和提醒；voiceOnly=仅麦克风输入的回复 */
+  voiceOutputScope: "all" | "voiceOnly";
   /** 语音播报服务商（VOICE_PROVIDERS 预设 id） */
   voiceProviderId: string;
   /** 语音播报 baseUrl 覆盖，留空用播报服务商默认地址 */
@@ -269,6 +271,7 @@ export const DEFAULT_SETTINGS: Settings = {
   screenshotHotkey: "CommandOrControl+Shift+P",
   voiceInputEnabled: false,
   voiceOutputEnabled: false,
+  voiceOutputScope: "voiceOnly",
   voiceProviderId: "bailian",
   voiceBaseUrl: "",
   voiceApiKey: "",

@@ -4,10 +4,12 @@ import { pickRecorderMime } from "../ai/voice";
 interface Props {
   onVoice: (audio: Blob) => void;
   onVoiceError: (message: string) => void;
+  /** 悬停宠物时显示；录音中强制显示（否则会丢失停止入口） */
+  visible: boolean;
 }
 
 /** 独立悬浮麦克风按钮（角色左上角）：点击开始录音，再点停止并识别发送 */
-export default function MicButton({ onVoice, onVoiceError }: Props) {
+export default function MicButton({ onVoice, onVoiceError, visible }: Props) {
   const [recording, setRecording] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -38,6 +40,8 @@ export default function MicButton({ onVoice, onVoiceError }: Props) {
       onVoiceError(`麦克风不可用：${String(err)}`);
     }
   };
+
+  if (!visible && !recording) return null;
 
   return (
     <button

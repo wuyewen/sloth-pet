@@ -9,6 +9,7 @@ import PetCanvas from "./pet/PetCanvas";
 import { bindDrag, reportHitRect } from "./pet/interactions";
 import ChatBubble from "./ui/ChatBubble";
 import MicButton from "./ui/MicButton";
+import VoiceToast from "./ui/VoiceToast";
 import { ChatMessage, streamChat } from "./ai/client";
 import { getProvider, resolveBaseUrl, Settings } from "./ai/providers";
 import { EMOTION_INSTRUCTION, parseEmotion } from "./ai/emotion";
@@ -56,6 +57,10 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  // 语音轻气泡：语音交互时不强弹聊天面板，临时展示当前一问一答，数秒后自动消失
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceReply, setVoiceReply] = useState<string | null>(null);
+  const voiceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [modelUrl, setModelUrl] = useState("/models/pet.vrm");
   // 模型重载序号：modelUrl 字符串可能没变（替换同名 custom.vrm / 增删动作文件），
   // 用它做 PetCanvas 的 key 强制重建，否则"重新加载/同步动作"是无效操作
@@ -181,17 +186,20 @@ export default function App() {
     setMessages((m) => [...m, { role: "assistant", content }]);
   }, []);
 
-  /** AI 回复语音播报（开启语音播报且配置了合成模型时）；失败显示到气泡便于排查 */
-  const speakReply = useCallback((text: string) => {
+  /** AI 回复语音播报（开启语音播报且配置了合成模型时）；失败显示到气泡便于排查。
+   *  viaVoice 标记来自麦克风输入的回复；播报范围为 voiceOnly 时其余来源一律不播 */
+  const speakReply = useCallback((text: string, viaVoice = false) => {
     const s = settingsRef.current;
     if (!s?.voiceOutputEnabled || !s.voiceTtsModel || !text) return;
+    if (s.voiceOutputScope === "voiceOnly" && !viaVoice) return;
     speak(s, text).catch((e) => {
       console.error("语音播报失败", e);
       pushAssistant(`语音播报失败：${String(e)}`);
     });
   }, [pushAssistant]);
 
-  /** 语音输入：音频直接进对话请求（input_audio），模型一步完成理解+回复 */
+  /** 语音输入：音频直接进对话请求（input_audio），模型一步完成理解+回复。
+   *  不强弹聊天面板：过程与回复走 VoiceToast 轻气泡，完整记录仍进聊天历史 */
   const handleVoice = useCallback(
     async (audio: Blob) => {
       const settings = settingsRef.current;
@@ -201,9 +209,19 @@ export default function App() {
         setChatOpen(true);
         return;
       }
-      setChatOpen(true);
+      if (voiceTimer.current) clearTimeout(voiceTimer.current);
+      setVoiceReply(null);
+      setVoiceBusy(true);
       setSending(true);
       setStreaming("🎤 聆听中…");
+      /** 轻气泡展示最终文本，展示时长随字数走，读完自动消失 */
+      const flashReply = (text: string, ms?: number) => {
+        setVoiceReply(text);
+        voiceTimer.current = setTimeout(
+          () => setVoiceReply(null),
+          ms ?? Math.min(4000 + text.length * 80, 15000)
+        );
+      };
       try {
         const dataUri = await blobToDataUri(audio);
         const userMsg: ChatMessage = {
@@ -216,14 +234,16 @@ export default function App() {
         stopSpeaking();
         const reply = await runStream(settings, settings.chatModel, history);
         pushAssistant(reply);
-        speakReply(reply);
+        speakReply(reply, true);
+        flashReply(reply);
       } catch (err) {
-        pushAssistant(
-          `语音消息失败：${String(err)}（语音输入需要对话模型支持音频，如百炼 qwen3-omni-flash）`
-        );
+        const msg = `语音消息失败：${String(err)}（语音输入需要对话模型支持音频，如百炼 qwen3-omni-flash）`;
+        pushAssistant(msg);
+        flashReply(msg, 8000);
       } finally {
         setStreaming(null);
         setSending(false);
+        setVoiceBusy(false);
       }
     },
     [runStream, pushAssistant, speakReply]
@@ -446,7 +466,18 @@ export default function App() {
           onClose={() => setChatOpen(false)}
         />
       )}
-      {micEnabled && <MicButton onVoice={handleVoice} onVoiceError={pushAssistant} />}
+      {micEnabled && (
+        <MicButton onVoice={handleVoice} onVoiceError={pushAssistant} visible={hover} />
+      )}
+      {!chatOpen && (voiceBusy || voiceReply) && (
+        <VoiceToast
+          text={voiceBusy ? streaming || "🎤 聆听中…" : voiceReply!}
+          onOpen={() => {
+            setChatOpen(true);
+            setVoiceReply(null);
+          }}
+        />
+      )}
       {hover && !chatOpen && (
         <button
           onClick={() => setChatOpen(true)}

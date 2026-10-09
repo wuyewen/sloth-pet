@@ -552,11 +552,23 @@ export default function SettingsPanel() {
                   checked={settings.voiceOutputEnabled}
                   onChange={(e) => patch({ voiceOutputEnabled: e.target.checked })}
                 />
-                语音播报（扬声器朗读 AI 回复和提醒）
+                语音播报（扬声器朗读，范围见下）
               </label>
 
               {settings.voiceOutputEnabled && (
                 <>
+                  <div style={labelStyle}>播报范围</div>
+                  <select
+                    style={inputStyle}
+                    value={settings.voiceOutputScope}
+                    onChange={(e) =>
+                      patch({ voiceOutputScope: e.target.value as "all" | "voiceOnly" })
+                    }
+                  >
+                    <option value="voiceOnly">仅麦克风输入的回复（省 token，推荐）</option>
+                    <option value="all">所有回复和提醒</option>
+                  </select>
+
                   <div style={labelStyle}>播报服务商</div>
                   <select
                     style={inputStyle}
